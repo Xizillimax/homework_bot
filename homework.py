@@ -1,8 +1,9 @@
 import logging
 import os
 import time
-import telegram
+
 import requests
+import telegram
 from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler
 
@@ -42,7 +43,7 @@ class StatusError(Exception):
 
 
 class ApiAnsverError(Exception):
-    """Ошибка ответа о данных работы."""
+    """Ошибка Api ответа о данных работы."""
 
     pass
 
@@ -77,15 +78,15 @@ def get_api_answer(params):
         logging.error(message, exc_info=True)
     api_answer_json = api_answer.json()
     if api_answer_json.get('homeworks') is None:
-        message = 'отсутствие ожидаемых ключей в ответе'
+        message = 'Отсутствие данных о работ в ответе'
         logging.error(message, exc_info=True)
         raise ApiAnsverError(message)
     if api_answer_json.get('current_date') is None:
-        message = 'отсутствие ожидаемых ключей в ответе'
+        message = 'Отсутствие данных о времени в ответе'
         logging.error(message, exc_info=True)
         raise ApiAnsverError(message)
     if api_answer_json.get('code') == 'UnknownError':
-        message = 'недоступность эндпоинта'
+        message = 'Недоступность эндпоинта, ошибка 400'
         logging.error(message, exc_info=True)
         raise ApiAnsverError(message)
     if api_answer_json.get('code') == 'not_authenticated':
@@ -93,7 +94,7 @@ def get_api_answer(params):
         logging.error(message, exc_info=True)
         raise ApiAnsverError(message)
     if api_answer_json.get('error') is not None:
-        message = 'любые другие сбои при запросе к эндпоинту'
+        message = 'Kюбые другие сбои при запросе к эндпоинту'
         logging.error(message, exc_info=True)
         raise ApiAnsverError(message)
     return api_answer_json
@@ -102,25 +103,25 @@ def get_api_answer(params):
 def check_response(response):
     """Проверяет корректность входных данных."""
     if not isinstance(response, dict):
-        message = 'отсутствие ожидаемых ключей в ответе API'
+        message = 'Тип данных не соответствует должному'
         logging.error(message, exc_info=True)
         raise TypeError(message)
     homework = response.get('homeworks')
     if homework is None:
-        message = 'отсутствие ожидаемых ключей в ответе API'
+        message = 'Отсутствие ожидаемых ключей в ответе API'
         logging.error(message, exc_info=True)
         raise TypeError(message)
     if not isinstance(homework, list):
-        message = 'отсутствие ожидаемых ключей в ответе API'
+        message = 'Тип данных не соответствует должному'
         logging.error(message, exc_info=True)
         raise TypeError(message)
     if len(homework) == 0:
         message = 'Нет работ за данный период'
-        logging.error(message, exc_info=True)
-        raise StatusError(message)
+        logging.info(message, exc_info=True)
+        return 0
     homework_status = homework[0].get('status')
     if homework_status not in HOMEWORK_VERDICTS:
-        message = (('неожиданный статус домашней работы,'),
+        message = (('Неожиданный статус домашней работы,'),
                    ('обнаруженный в ответе API'))
         logging.error(message, exc_info=True)
         raise TypeError(message)
@@ -132,11 +133,11 @@ def parse_status(homework):
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
     if homework_name is None:
-        message = 'в ответе API домашки нет ключа homework_name'
+        message = 'В ответе API домашки нет ключа homework_name'
         logging.error(message, exc_info=True)
         raise StatusError(message)
     if homework_status not in HOMEWORK_VERDICTS:
-        message = 'Статус домашки не найден в базе статусов.'
+        message = 'Статус домашки не найден в базе статусов'
         logging.error(message, exc_info=True)
         raise StatusError(message)
     verdict = HOMEWORK_VERDICTS[homework_status]
@@ -149,16 +150,26 @@ def main():
         exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     params = {
-        'from_date': int(time.time()) - 5184000
+        'from_date': int(time.time())
     }
     new_status_homework = None
     while True:
         try:
             new_homework = get_api_answer(params)
             response = check_response(new_homework)
-            if (new_status_homework
-               != response.get('homeworks')[0].get('status')):
-                send_message(bot, parse_status(response.get('homeworks')[0]))
+            if response != 0:
+                status_homework = response.get('homeworks')[0].get('status')
+                if (new_status_homework != status_homework):
+                    send_message(bot,
+                                 parse_status(response.get('homeworks')[0]))
+                else:
+                    message = 'Изменений нет'
+                    logging.info(message, exc_info=True)
+                    send_message(bot, message)
+            else:
+                message = 'Пока нет никакой информации'
+                logging.info(message, exc_info=True)
+                send_message(bot, message)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             send_message(bot, message)
