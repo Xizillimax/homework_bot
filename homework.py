@@ -11,6 +11,13 @@ from exceptions import ApiAnsverError, StatusError
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+handler = RotatingFileHandler('my_log.log',
+                              maxBytes=50000000,
+                              backupCount=5)
+logger.addHandler(handler)
+
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
@@ -166,10 +173,4 @@ if __name__ == '__main__':
         format='%(asctime)s, %(levelname)s, %(message)s'
     )
 
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    handler = RotatingFileHandler('my_log.log',
-                                  maxBytes=50000000,
-                                  backupCount=5)
-    logger.addHandler(handler)
     main()
