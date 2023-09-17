@@ -7,7 +7,7 @@ import telegram
 from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler
 
-from exceptions import ApiAnsverError, StatusError
+from exceptions import ApiAnsverError, RequestsError, StatusError
 
 load_dotenv()
 
@@ -22,6 +22,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
+ONE_DAY_IN_SECONDS = 86400
 RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
@@ -41,9 +42,9 @@ def check_tokens():
                   'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID}
     broken_tokens = []
     for token, value in all_tokens.items():
-        if not bool(value):
+        if value is None:
             broken_tokens.append(token)
-    if len(broken_tokens) != 0:
+    if broken_tokens:
         message = ('Отсутствие обязательных переменных'
                    'окружения во время запуска бота: '
                    f"{', '.join([i for i in broken_tokens])}")
@@ -66,27 +67,21 @@ def send_message(bot, message):
 def get_api_answer(timestamp):
     """Получает данные с сайта и проверяет их."""
     params = {
-        'from_date': timestamp or int(time.time())
+        'from_date': timestamp
     }
     try:
         api_answer = requests.get(ENDPOINT, params=params, headers=HEADERS)
     except requests.RequestException as error:
         message = f'Ошибка при отправке запроса: {error}'
-        logging.error(message, exc_info=True)
+        raise RequestsError(message)
+    if api_answer.status_code != 200:
+        message = 'Любые другие сбои при запросе к эндпоинту'
+        raise ApiAnsverError(message)
     try:
         api_answer_json = api_answer.json()
     except requests.JSONDecodeError as error:
         message = f'Ошибка при распаковке запроса: {error}'
-        logging.error(message, exc_info=True)
-    if api_answer_json.get('code') == 'UnknownError':
-        message = 'Недоступность эндпоинта, ошибка 400'
-        raise ApiAnsverError(message)
-    if api_answer_json.get('code') == 'not_authenticated':
-        message = api_answer_json.get('message')
-        raise ApiAnsverError(message)
-    if api_answer.status_code != 200:
-        message = 'Любые другие сбои при запросе к эндпоинту'
-        raise ApiAnsverError(message)
+        raise RequestsError(message)
     return api_answer_json
 
 
@@ -131,27 +126,19 @@ def main():
     if not check_tokens():
         exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time())
-    new_status_homework = None
+    timestamp = int(time.time()) - ONE_DAY_IN_SECONDS
     last_message = None
     while True:
         try:
             request = get_api_answer(timestamp)
             response = check_response(request)
             new_homeworks = response.get('homeworks')
-            if len(new_homeworks) != 0:
-                status_homework = new_homeworks[0].get('status')
-                if (new_status_homework != status_homework):
-                    send_message(bot,
-                                 parse_status(new_homeworks[0]))
-                else:
-                    message = 'Изменений нет'
-                    logging.info(message, exc_info=True)
-                    send_message(bot, message)
+            if new_homeworks:
+                send_message(bot,
+                             parse_status(new_homeworks[0]))
             else:
                 message = 'Пока нет никакой информации'
                 logging.info(message, exc_info=True)
-                send_message(bot, message)
             timestamp = response.get('current_date', timestamp)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
