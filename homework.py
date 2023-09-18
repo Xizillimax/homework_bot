@@ -5,6 +5,7 @@ import time
 import requests
 import telegram
 from dotenv import load_dotenv
+from http import HTTPStatus
 from logging.handlers import RotatingFileHandler
 
 from exceptions import ApiAnsverError, RequestsError, StatusError
@@ -74,15 +75,14 @@ def get_api_answer(timestamp):
     except requests.RequestException as error:
         message = f'Ошибка при отправке запроса: {error}'
         raise RequestsError(message)
-    if api_answer.status_code != 200:
+    if api_answer.status_code != HTTPStatus.OK:
         message = 'Любые другие сбои при запросе к эндпоинту'
         raise ApiAnsverError(message)
     try:
-        api_answer_json = api_answer.json()
+        return api_answer.json()
     except requests.JSONDecodeError as error:
         message = f'Ошибка при распаковке запроса: {error}'
         raise RequestsError(message)
-    return api_answer_json
 
 
 def check_response(response):
